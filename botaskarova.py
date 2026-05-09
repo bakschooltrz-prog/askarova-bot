@@ -19,7 +19,6 @@ EMPLOYEES = [
 ]
 
 TIMEOUT_SECONDS = 15
-
 SELECT_EMPLOYEE, SELECT_RATING, GET_COMMENT = range(3)
 
 logging.basicConfig(format="%(asctime)s - %(levelname)s - %(message)s", level=logging.INFO)
@@ -58,22 +57,57 @@ async def _timeout_reset(update, context, msg_id):
     context.user_data.clear()
     await context.bot.send_message(
         chat_id=update.effective_chat.id,
-        text="⏱ Время вышло. Начинаем заново!\n\nВыберите сотрудника:",
+        text=f"⏱ Время вышло.\n\n👋 Филиал: *{BRANCH}*\n\nВыберите сотрудника:",
+        parse_mode="Markdown",
         reply_markup=employee_keyboard()
     )
+
+
+async def show_main_menu(update, context):
+    """Показывает главное меню — используется везде"""
+    cancel_timer(context)
+    context.user_data.clear()
+    if update.message:
+        msg = await update.message.reply_text(
+            f"👋 Филиал: *{BRANCH}*\n\nВыберите сотрудника:",
+            parse_mode="Markdown",
+            reply_markup=employee_keyboard()
+        )
+    else:
+        msg = await update.callback_query.edit_message_text(
+            f"👋 Филиал: *{BRANCH}*\n\nВыберите сотрудника:",
+            parse_mode="Markdown",
+            reply_markup=employee_keyboard()
+        )
+    start_timer(update, context, msg.message_id)
+    return SELECT_EMPLOYEE
 
 
 # ─── /start ───────────────────────────────────────────────────────────────────
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    cancel_timer(context)
-    context.user_data.clear()
-    msg = await update.message.reply_text(
-        f"👋 Добро пожаловать!\n🏢 Филиал: *{BRANCH}*\n\nВыберите сотрудника:",
-        parse_mode="Markdown",
-        reply_markup=employee_keyboard()
-    )
-    start_timer(update, context, msg.message_id)
-    return SELECT_EMPLOYEE
+    return await show_main_menu(update, context)
+
+
+# ─── Ловим нажатия на кнопки сотрудников ВНЕ диалога (после авто-рестарта) ───
+async def global_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    if query.data.startswith("emp_"):
+        # Запускаем диалог заново
+        idx = int(query.data.replace("emp_", ""))
+        employee = EMPLOYEES[idx]
+        context.user_data.clear()
+        context.user_data["employee"] = employee
+
+        keyboard = [[InlineKeyboardButton(stars(i), callback_data=f"rate_{i}")] for i in range(1, 6)]
+        keyboard.append([InlineKeyboardButton("⬅️ Назад", callback_data="back")])
+
+        await query.edit_message_text(
+            f"👤 Сотрудник: *{employee}*\n\nПоставьте оценку:",
+            parse_mode="Markdown",
+            reply_markup=InlineKeyboardMarkup(keyboard)
+        )
+        start_timer(update, context, query.message.message_id)
 
 
 # ─── Выбор сотрудника ─────────────────────────────────────────────────────────
@@ -105,8 +139,8 @@ async def select_rating(update: Update, context: ContextTypes.DEFAULT_TYPE):
     cancel_timer(context)
 
     if query.data == "back":
-        await query.edit_message_text(
-            f"🏢 Филиал: *{BRANCH}*\n\nВыберите сотрудника:",
+        msg = await query.edit_message_text(
+            f"👋 Филиал: *{BRANCH}*\n\nВыберите сотрудника:",
             parse_mode="Markdown",
             reply_markup=employee_keyboard()
         )
@@ -205,7 +239,7 @@ async def _auto_restart(update, context, old_msg_id):
         pass
     await context.bot.send_message(
         chat_id=update.effective_chat.id,
-        text="🔄 *Новый отзыв?*\n\nВыберите сотрудника:",
+        text=f"🔄 *Новый отзыв?*\n\n👋 Филиал: *{BRANCH}*\n\nВыберите сотрудника:",
         parse_mode="Markdown",
         reply_markup=employee_keyboard()
     )
@@ -222,19 +256,31 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ─── MAIN ─────────────────────────────────────────────────────────────────────
 def main():
     app = Application.builder().token(BOT_TOKEN).build()
+
     conv = ConversationHandler(
-        entry_points=[CommandHandler("start", start)],
+        entry_points=[
+            CommandHandler("start", start),
+            CallbackQueryHandler(select_employee, pattern="^emp_"),
+        ],
         states={
-            SELECT_EMPLOYEE: [CallbackQueryHandler(select_employee)],
+            SELECT_EMPLOYEE: [CallbackQueryHandler(select_employee, pattern="^emp_")],
             SELECT_RATING:   [CallbackQueryHandler(select_rating)],
             GET_COMMENT: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, get_comment),
                 MessageHandler(filters.VOICE, get_voice),
             ],
         },
-        fallbacks=[CommandHandler("cancel", cancel)],
+        fallbacks=[
+            CommandHandler("cancel", cancel),
+            CommandHandler("start", start),
+        ],
+        allow_reentry=True,
     )
+
     app.add_handler(conv)
+    # Глобальный обработчик — ловит нажатия после авто-рестарта
+    app.add_handler(CallbackQueryHandler(global_callback_handler))
+
     print(f"✅ Бот {BRANCH} запущен!")
     app.run_polling()
 
