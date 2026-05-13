@@ -222,7 +222,7 @@ async def get_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     msg = await update.message.reply_text(
         f"✅ Голосовой отзыв принят!\n*{employee}* — {stars(rating)}\n\n"
-        f"_Меню появится через 15 секунд..._",
+        f"_Меню появится через 80 секунд..._",
         parse_mode="Markdown"
     )
     context.user_data.clear()
