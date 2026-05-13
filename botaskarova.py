@@ -8,7 +8,7 @@ from telegram.ext import (
 )
 
 BOT_TOKEN  = os.environ.get("BOT_TOKEN", "8710464933:AAFhS409kgG6LuRhK61Fx_aYVABy8L3DoO0")
-MANAGER_ID = int(os.environ.get("MANAGER_ID", "1338569085"))
+MANAGER_ID = int(os.environ.get("MANAGER_ID", "60365607"))
 BRANCH     = "Аскарова"
 
 EMPLOYEES = [
